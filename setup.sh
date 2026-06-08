@@ -95,10 +95,14 @@ ink "Access the application"
 EG_SVC=$(kubectl get svc -n "$gateway_ns" \
     -l "gateway.envoyproxy.io/owning-gateway-namespace=$NSAPP,gateway.envoyproxy.io/owning-gateway-name=example-gateway" \
     -o jsonpath="{.items[0].metadata.name}")
+# Match by .port (the container port), not .name: it directly mirrors the
+# port numbers declared on the Gateway's listeners (80/443) in
+# example-httproute.yaml, which we control - unlike .name, whose convention
+# is an Envoy Gateway implementation detail that can vary across versions.
 NODE_PORT=$(kubectl get svc "$EG_SVC" -n "$gateway_ns" \
-    -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+    -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 HTTPS_NODE_PORT=$(kubectl get svc "$EG_SVC" -n "$gateway_ns" \
-    -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
+    -o jsonpath='{.spec.ports[?(@.port==443)].nodePort}')
 
 echo "INFO: access the application via the Gateway"
 echo "HTTP:  curl hello-world.info:$NODE_PORT"
