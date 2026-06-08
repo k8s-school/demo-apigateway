@@ -1,0 +1,48 @@
+# This is the part that replaces example-ingress.yaml from the nginx-ingress
+# demo: a Gateway (listener + TLS termination config, the Ingress "spec.tls"
+# and controller-exposure equivalent) and an HTTPRoute (host/path routing
+# rules + backend refs, the Ingress "spec.rules" equivalent).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: example-gateway
+spec:
+  gatewayClassName: eg
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: hello-world.info
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: hello-world.info
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: hello-world-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-httproute
+spec:
+  parentRefs:
+    - name: example-gateway
+  hostnames:
+    - hello-world.info
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: web
+          port: 8080

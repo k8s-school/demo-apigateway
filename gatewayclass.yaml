@@ -1,0 +1,28 @@
+# Platform-level resources: select the Gateway API controller (Envoy Gateway)
+# and configure it to expose Gateways as NodePort services, since this demo
+# runs on a bare kubeadm cluster with no cloud LoadBalancer.
+# This is the Gateway API analog of the IngressClass shipped by the
+# nginx-ingress Helm chart.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: custom-proxy-config
+  namespace: envoy-gateway-system
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: NodePort
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: custom-proxy-config
+    namespace: envoy-gateway-system
