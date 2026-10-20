@@ -16,18 +16,21 @@ Usage: `basename $0` [options]
   Available options:
     -h         this message
     -s         run exercice and solution
+    -a         also run the canary and A/B testing solution (implies -s)
 
 Run Gateway API exercice
 EOD
 }
 
 GATEWAY_FULL=false
+AB_TESTING=false
 
 # get the options
-while getopts hs c ; do
+while getopts hsa c ; do
     case $c in
 	    h) usage ; exit 0 ;;
 	    s) GATEWAY_FULL=true ;;
+	    a) GATEWAY_FULL=true ; AB_TESTING=true ;;
 	    \?) usage ; exit 2 ;;
     esac
 done
@@ -38,7 +41,7 @@ if [ $# -ne 0 ] ; then
     exit 2
 fi
 
-NSAPP="ingress-app"
+NSAPP="gateway-app"
 NODE1_IP=$(kubectl get nodes --selector="! node-role.kubernetes.io/master" \
     -o=jsonpath='{.items[0].status.addresses[0].address}')
 
@@ -67,9 +70,7 @@ kubectl create deployment web -n "$NSAPP" --image=gcr.io/google-samples/hello-ap
 kubectl expose deployment web -n "$NSAPP" --port=8080
 kubectl  wait -n "$NSAPP" --for=condition=available deployment web
 
-TMP_STR="$NODE1_IP hello-world.info"
-echo "INFO: Add '$TMP_STR' to /etc/hosts"
-sudo sh -c "echo '$TMP_STR' >> /etc/hosts"
+echo "INFO: to access the application by name, add '$NODE1_IP hello-world.info' to /etc/hosts"
 
 if [ "$GATEWAY_FULL" = false ]
 then
@@ -108,7 +109,47 @@ echo "INFO: access the application via the Gateway"
 echo "HTTP:  curl hello-world.info:$NODE_PORT"
 echo "HTTPS: curl -k https://hello-world.info:$HTTPS_NODE_PORT"
 echo ""
-curl hello-world.info:$NODE_PORT
+# --resolve avoids depending on /etc/hosts
+CURL="curl -sS --fail --resolve hello-world.info:$NODE_PORT:$NODE1_IP"
+$CURL hello-world.info:$NODE_PORT
 echo ""
 echo "Testing HTTPS endpoint (ignoring self-signed certificate):"
-curl -k https://hello-world.info:$HTTPS_NODE_PORT
+curl -sS --fail -k --resolve "hello-world.info:$HTTPS_NODE_PORT:$NODE1_IP" https://hello-world.info:$HTTPS_NODE_PORT
+
+if [ "$AB_TESTING" = false ]
+then
+    exit 0
+fi
+
+# Count the answers of each version over 100 requests
+# $@: extra curl options
+count_versions() {
+    for i in $(seq 100); do
+        $CURL "$@" hello-world.info:$NODE_PORT | grep "^Version:"
+    done | sort | uniq -c
+}
+
+ink "Deploy version 2 of the application"
+kubectl create deployment web-v2 -n "$NSAPP" --image=gcr.io/google-samples/hello-app:2.0
+kubectl expose deployment web-v2 -n "$NSAPP" --port=8080
+kubectl wait -n "$NSAPP" --for=condition=available deployment web-v2
+
+ink "Canary release: send 10% of the traffic to version 2"
+kubectl apply -n "$NSAPP" -f $DIR/httproute-canary.yaml
+# Wait for the new HTTPRoute to be programmed in Envoy
+timeout 60 sh -c "until $CURL hello-world.info:$NODE_PORT | grep -q 'Version: 2.0.0'; do sleep 1; done"
+count_versions
+V2=$(count_versions | awk '/2.0.0/ {print $1}')
+if [ "${V2:-0}" -lt 2 ] || [ "${V2:-0}" -gt 25 ]; then
+    ink -r "Expected about 10% of the requests on version 2, got ${V2:-0}%"
+    exit 1
+fi
+
+ink "A/B testing: route on the HTTP header 'x-version: v2'"
+kubectl apply -n "$NSAPP" -f $DIR/httproute-ab.yaml
+timeout 60 sh -c "until [ \"\$($CURL hello-world.info:$NODE_PORT | grep Version:)\" = 'Version: 1.0.0' ] && $CURL -H 'x-version: v2' hello-world.info:$NODE_PORT | grep -q 'Version: 2.0.0'; do sleep 1; done"
+count_versions
+count_versions -H "x-version: v2"
+[ "$(count_versions | awk '{print $3}')" = "1.0.0" ] || { ink -r "Requests without header must all go to version 1"; exit 1; }
+[ "$(count_versions -H 'x-version: v2' | awk '{print $3}')" = "2.0.0" ] || { ink -r "Requests with header must all go to version 2"; exit 1; }
+ink "Canary and A/B testing: success"

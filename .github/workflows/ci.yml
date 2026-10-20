@@ -33,4 +33,4 @@ jobs:
           kubectl get pods -n kube-system
       - name: Run test on Gateway API demo
         run: |
-          ./setup.sh -s
+          ./setup.sh -a

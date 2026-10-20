@@ -14,6 +14,9 @@ spec:
     kubernetes:
       envoyService:
         type: NodePort
+        # Envoy Gateway defaults to Local, which only answers on the nodes running
+        # an Envoy pod: Cluster makes the NodePort reachable on every node
+        externalTrafficPolicy: Cluster
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass

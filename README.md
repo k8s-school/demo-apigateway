@@ -36,6 +36,24 @@ on a bare cluster with no cloud LoadBalancer). `example-httproute.yaml` contains
 the application-level resources (`Gateway` and `HTTPRoute`) — this is the file
 that plays the role of the former `example-ingress.yaml`.
 
+## Canary release and A/B testing
+
+```bash
+./setup.sh -a
+```
+
+Deploys a second version of the application (`web-v2`), then updates the `HTTPRoute`:
+
+- `httproute-canary.yaml`: canary release, `backendRefs` with weights, 90% of the requests to `web`, 10% to `web-v2`
+- `httproute-ab.yaml`: A/B testing, the requests with the header `x-version: v2` go to `web-v2`, all the others to `web`
+
+```bash
+curl hello-world.info:<node-port>
+curl -H "x-version: v2" hello-world.info:<node-port>
+```
+
+Unlike `Ingress`, these features are part of the standard API: no controller-specific annotation is needed.
+
 ## HTTPS Support
 
 This demo includes automatic generation of self-signed certificates for HTTPS.
@@ -58,6 +76,8 @@ Default domain is `hello-world.info`. Certificates are stored in `./certs/` dire
 ### Accessing the application
 
 After running `./setup.sh -s`, you can access the application via the Gateway:
+
+Add `<node-ip> hello-world.info` to `/etc/hosts`, the script prints the line. Then:
 
 - **HTTP**: `curl hello-world.info:<node-port>`
 - **HTTPS**: `curl -k https://hello-world.info:<https-node-port>`
