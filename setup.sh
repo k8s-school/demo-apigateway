@@ -55,10 +55,17 @@ kubectl delete ns -l "demo=gateway-api-$ID"
 kubectl create namespace "$NSAPP"
 kubectl label ns "$NSAPP" "demo=gateway-api-$ID"
 
-ink "Install Gateway API CRDs and Envoy Gateway controller"
-helm upgrade --install eg oci://docker.io/envoyproxy/gateway-helm \
-  --version "$gateway_version" \
-  --namespace "$gateway_ns" --create-namespace
+# The controller is shared by all the trainees of the cluster: install it only
+# once, two concurrent 'helm upgrade --install' fail with "cannot re-use a name
+# that is still in use"
+if kubectl get deployment -n "$gateway_ns" envoy-gateway >/dev/null 2>&1; then
+  ink -y "Envoy Gateway controller already installed, skipping"
+else
+  ink "Install Gateway API CRDs and Envoy Gateway controller"
+  helm upgrade --install eg oci://docker.io/envoyproxy/gateway-helm \
+    --version "$gateway_version" \
+    --namespace "$gateway_ns" --create-namespace
+fi
 
 ink "Wait for Envoy Gateway controller to be up and running"
 kubectl wait --timeout=5m -n "$gateway_ns" deployment/envoy-gateway \
