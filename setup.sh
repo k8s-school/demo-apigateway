@@ -41,17 +41,19 @@ if [ $# -ne 0 ] ; then
     exit 2
 fi
 
-NSAPP="gateway-app"
+# Per-trainee application namespace: the cluster may be shared
+ID="${ID:-$(id -un)}"
+NSAPP="gateway-$ID"
 NODE1_IP=$(kubectl get nodes --selector="! node-role.kubernetes.io/master" \
     -o=jsonpath='{.items[0].status.addresses[0].address}')
 
 # Run on kubeadm cluster
 # see "kubernetes in action" p391
-kubectl delete ns -l "demo=gateway-api"
-kubectl create namespace "$gateway_ns"
+# Only the namespace of this trainee is reset: the Envoy Gateway controller
+# namespace is shared, never delete it
+kubectl delete ns -l "demo=gateway-api-$ID"
 kubectl create namespace "$NSAPP"
-kubectl label ns "$gateway_ns" "demo=gateway-api"
-kubectl label ns "$NSAPP" "demo=gateway-api"
+kubectl label ns "$NSAPP" "demo=gateway-api-$ID"
 
 ink "Install Gateway API CRDs and Envoy Gateway controller"
 helm upgrade --install eg oci://docker.io/envoyproxy/gateway-helm \
